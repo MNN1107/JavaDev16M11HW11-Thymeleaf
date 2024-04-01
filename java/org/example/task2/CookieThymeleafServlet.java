@@ -40,49 +40,68 @@ public class CookieThymeleafServlet extends HttpServlet {
     }
 
     @Override
-    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+    protected void doGet(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
         response.setContentType("text/html");
         response.setCharacterEncoding("UTF-8");
 
         String timezone = request.getParameter("timezone");
 
+        Cookie lastTimezoneCookie = getLastTimezoneCookie(request);
+
+        ZoneId zoneId = determineZoneId(timezone, lastTimezoneCookie);
+
+        updateLastTimezoneCookie(response, zoneId.getId());
+
+        String formattedTime = getCurrentTime(zoneId);
+
+        Context context = createContext(formattedTime);
+
+        templateEngine.process("time", context, response.getWriter());
+    }
+
+    private Cookie getLastTimezoneCookie(HttpServletRequest request) {
         Cookie[] cookies = request.getCookies();
-        String lastTimezone = null;
         if (cookies != null) {
             for (Cookie cookie : cookies) {
                 if (cookie.getName().equals("lastTimezone")) {
-                    lastTimezone = cookie.getValue();
-                    break;
+                    return cookie;
                 }
             }
         }
+        return null;
+    }
 
-        ZoneId zoneId;
+    private ZoneId determineZoneId(String timezone, Cookie lastTimezoneCookie) {
         if (timezone != null && !timezone.isEmpty()) {
             try {
                 TimezoneUtils.validateTimezone(timezone);
-                zoneId = ZoneId.of(timezone);
+                return ZoneId.of(timezone);
             } catch (IllegalArgumentException e) {
-                zoneId = ZoneId.of("UTC");
+                return ZoneId.of("UTC");
             }
-        } else if (lastTimezone != null && !lastTimezone.isEmpty()) {
-            zoneId = ZoneId.of(lastTimezone);
+        } else if (lastTimezoneCookie != null && !lastTimezoneCookie.getValue().isEmpty()) {
+            return ZoneId.of(lastTimezoneCookie.getValue());
         } else {
-            zoneId = ZoneId.of("UTC");
+            return ZoneId.of("UTC");
         }
+    }
 
-        Cookie timezoneCookie = new Cookie("lastTimezone", zoneId.getId());
+    private void updateLastTimezoneCookie(HttpServletResponse response, String timezone) {
+        Cookie timezoneCookie = new Cookie("lastTimezone", timezone);
         timezoneCookie.setMaxAge(24 * 60 * 60);
         response.addCookie(timezoneCookie);
+    }
 
+    private String getCurrentTime(ZoneId zoneId) {
         ZonedDateTime zonedDateTime = ZonedDateTime.now(zoneId);
         LocalDateTime currentTime = zonedDateTime.toLocalDateTime();
-        String formattedTime = currentTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z"));
+        return currentTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z"));
+    }
 
+    private Context createContext(String formattedTime) {
         Context context = new Context();
         context.setVariable("formattedTime", formattedTime);
-
-       
-        templateEngine.process("time", context, response.getWriter());
-    }
+        return context;
+    }      
 }
